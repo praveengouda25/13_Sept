@@ -236,6 +236,8 @@ function MaintenancePage() {
       {rows.length > 0 && (
         <RecordTable
           rows={rows}
+          deleteTable="maintenance_requests"
+          deleteLabel="maintenance request"
           onRowClick={(r) => {
             setEditing(r);
             setOpen(true);

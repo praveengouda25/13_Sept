@@ -104,7 +104,7 @@ export function Navbar() {
                 solid ? "text-accent" : "text-primary-foreground/70",
               )}
             >
-              Mathrudhama Children's Village
+              Mathrudhama Children's Home
             </span>
           </span>
         </Link>

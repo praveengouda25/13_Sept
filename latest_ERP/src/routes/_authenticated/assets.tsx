@@ -189,6 +189,8 @@ function AssetsPage() {
       {rows.length > 0 && (
         <RecordTable
           rows={rows}
+          deleteTable="assets"
+          deleteLabel="asset"
           columns={[
             { key: "name", header: "Asset", cell: (r) => r.name },
             { key: "cat", header: "Category", cell: (r) => r.category ?? "—" },

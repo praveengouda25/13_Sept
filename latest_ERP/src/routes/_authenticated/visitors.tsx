@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Plus, LogOut } from "lucide-react";
+import { Plus, LogOut, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   PageHeader,
@@ -16,7 +16,14 @@ import { RecordTable, StatusBadge } from "@/components/data/record-table";
 import { RecordDialog, clean, type FormValues } from "@/components/data/record-dialog";
 import { QrButton, recordUrl } from "@/components/data/qr";
 import { useSession } from "@/hooks/use-session";
-import { listVisitors, saveVisitor, checkoutVisitor } from "@/lib/ops-extra.functions";
+import {
+  approveVisitor,
+  checkoutVisitor,
+  listVisitors,
+  markVisitorEntry,
+  rejectVisitor,
+  saveVisitor,
+} from "@/lib/ops-extra.functions";
 import { listStudents } from "@/lib/operations.functions";
 import { can } from "@/lib/permissions";
 
@@ -66,7 +73,9 @@ type VisitorRow = {
 };
 
 function VisitorsPage() {
-  const { branchId } = useSession();
+  const { branchId, roles } = useSession();
+  const canApprove = roles.some((role) => ["super_admin", "trust_admin", "branch_admin", "warden"].includes(role));
+  const canEnter = canApprove || roles.includes("security_guard");
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
 
@@ -74,6 +83,9 @@ function VisitorsPage() {
   const fetchStudents = useServerFn(listStudents);
   const save = useServerFn(saveVisitor);
   const checkout = useServerFn(checkoutVisitor);
+  const approve = useServerFn(approveVisitor);
+  const reject = useServerFn(rejectVisitor);
+  const enter = useServerFn(markVisitorEntry);
 
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["visitors", branchId],
@@ -124,8 +136,35 @@ function VisitorsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const approveMut = useMutation({
+    mutationFn: (id: string) => approve({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Visitor approved");
+      void qc.invalidateQueries({ queryKey: ["visitors"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const rejectMut = useMutation({
+    mutationFn: (id: string) => reject({ data: { id, reason: null } }),
+    onSuccess: () => {
+      toast.success("Visitor rejected");
+      void qc.invalidateQueries({ queryKey: ["visitors"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const enterMut = useMutation({
+    mutationFn: (id: string) => enter({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Visitor entry marked");
+      void qc.invalidateQueries({ queryKey: ["visitors"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const rows = (data?.visitors ?? []) as VisitorRow[];
-  const inside = rows.filter((r) => r.status === "checked_in" && !r.exit_at);
+  const inside = rows.filter((r) => ["entered", "checked_in"].includes(r.status) && !r.exit_at);
 
   return (
     <>
@@ -134,7 +173,7 @@ function VisitorsPage() {
         description="Parents, guardians, guests and vendors entering the campus."
         actions={
           <Button disabled={!branchId} onClick={() => setOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" /> Check in visitor
+            <Plus className="mr-1 h-4 w-4" /> Register visitor
           </Button>
         }
       />
@@ -142,7 +181,7 @@ function VisitorsPage() {
       <RecordDialog
         open={open}
         onOpenChange={setOpen}
-        title="Check in a visitor"
+        title="Register a visitor"
         description="A visitor pass with a scannable QR code is generated automatically."
         fields={[
           { name: "visitor_name", label: "Visitor name", type: "text", required: true },
@@ -202,6 +241,8 @@ function VisitorsPage() {
       {rows.length > 0 && (
         <RecordTable
           rows={rows}
+          deleteTable="visitors"
+          deleteLabel="visitor record"
           columns={[
             { key: "name", header: "Visitor", cell: (r) => r.visitor_name },
             { key: "type", header: "Type", cell: (r) => r.visitor_type },
@@ -228,7 +269,46 @@ function VisitorsPage() {
               header: "Actions",
               cell: (r) => (
                 <div className="flex items-center gap-1">
-                  {r.status === "checked_in" && !r.exit_at && (
+                  {r.status === "pending" && canApprove && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={approveMut.isPending || rejectMut.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          approveMut.mutate(r.id);
+                        }}
+                      >
+                        <Check className="mr-1 h-3.5 w-3.5" /> Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={approveMut.isPending || rejectMut.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          rejectMut.mutate(r.id);
+                        }}
+                      >
+                        <X className="mr-1 h-3.5 w-3.5" /> Reject
+                      </Button>
+                    </>
+                  )}
+                  {r.status === "approved" && canEnter && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={enterMut.isPending}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        enterMut.mutate(r.id);
+                      }}
+                    >
+                      <Check className="mr-1 h-3.5 w-3.5" /> Mark Entry
+                    </Button>
+                  )}
+                  {(r.status === "entered" || r.status === "checked_in") && !r.exit_at && (
                     <Button
                       size="sm"
                       variant="outline"

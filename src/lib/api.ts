@@ -1,7 +1,17 @@
 const API_BASE_URL =
   import.meta.env["VITE_API_BASE_URL"] || (import.meta.env.DEV ? "http://localhost:5000/api" : "");
 export const ERP_BASE_PATH = "/erp";
-export const ERP_AUTH_URL = `${ERP_BASE_PATH}/auth`;
+
+function normalizeErpUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return `${ERP_BASE_PATH}/auth`;
+  return `${trimmed.replace(/\/$/, "")}/auth`;
+}
+
+// Keep local development and the bundled Vercel deployment on the same-origin
+// ERP by default. A separately deployed ERP can provide an absolute
+// VITE_ERP_URL without changing application code.
+export const ERP_AUTH_URL = normalizeErpUrl(import.meta.env["VITE_ERP_URL"] || ERP_BASE_PATH);
 
 export type AuthUser = { id: number; name: string; email: string; role: string; status: string };
 export const getAccessToken = () =>

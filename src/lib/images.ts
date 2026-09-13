@@ -67,6 +67,9 @@ export const images = {
   teamLead,
   storyStudent,
   storyFamily,
+  foodDistribution: eventKits,
+  womenEnterprise: culturalActivity,
+  foodKitchen: eventActivity,
   // Legacy aliases kept so older imports keep resolving.
   education: educationClassroom,
   healthcare: yogaMeditation,

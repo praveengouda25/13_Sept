@@ -379,6 +379,8 @@ function MessPage() {
           {menuRows.length > 0 && (
             <RecordTable
               rows={menuRows}
+              deleteTable="mess_menus"
+              deleteLabel="menu"
               columns={[
                 { key: "date", header: "Date", cell: (r) => r.menu_date },
                 { key: "meal", header: "Meal", cell: (r) => <StatusBadge value={r.meal} /> },
@@ -406,6 +408,8 @@ function MessPage() {
           {stockRows.length > 0 && (
             <RecordTable
               rows={stockRows}
+              deleteTable="food_stock"
+              deleteLabel="food stock item"
               columns={[
                 { key: "item", header: "Item", cell: (r) => r.item_name },
                 { key: "cat", header: "Category", cell: (r) => r.category ?? "—" },
@@ -438,6 +442,8 @@ function MessPage() {
           {vendorRows.length > 0 && (
             <RecordTable
               rows={vendorRows}
+              deleteTable="vendors"
+              deleteLabel="vendor"
               columns={[
                 { key: "name", header: "Vendor", cell: (r) => r.name },
                 { key: "cat", header: "Supplies", cell: (r) => r.category ?? "—" },

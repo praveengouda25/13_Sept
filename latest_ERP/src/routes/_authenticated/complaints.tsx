@@ -202,6 +202,8 @@ function ComplaintsPage() {
       {rows.length > 0 && (
         <RecordTable
           rows={rows}
+          deleteTable="complaints"
+          deleteLabel="complaint"
           onRowClick={(r) => {
             setEditing(r);
             setOpen(true);

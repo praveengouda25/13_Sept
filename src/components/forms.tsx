@@ -11,8 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Reveal } from "@/components/Reveal";
 import { cn } from "@/lib/utils";
-
-const API_BASE_URL = import.meta.env["VITE_API_BASE_URL"] || "http://localhost:5000/api";
+import { API_BASE_URL } from "@/lib/api";
 
 export type FieldDef = {
   name: string;

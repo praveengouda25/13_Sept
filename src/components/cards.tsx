@@ -3,8 +3,9 @@ import {
   ArrowRight,
   BookOpen,
   HeartPulse,
-  Utensils,
+  Trophy,
   Sparkles,
+  Shield,
   Calendar,
   Clock,
   MapPin,
@@ -21,7 +22,8 @@ import { cn } from "@/lib/utils";
 const causeIcons: Record<Cause["icon"], LucideIcon> = {
   book: BookOpen,
   heart: HeartPulse,
-  utensils: Utensils,
+  trophy: Trophy,
+  shield: Shield,
   sparkles: Sparkles,
 };
 

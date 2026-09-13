@@ -166,6 +166,8 @@ function DonationsPage() {
       {rows.length > 0 && (
         <RecordTable
           rows={rows}
+          deleteTable="donations"
+          deleteLabel="donation"
           columns={[
             { key: "date", header: "Date", cell: (r) => r.donated_on },
             { key: "donor", header: "Donor", cell: (r) => r.donor_name },

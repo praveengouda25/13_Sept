@@ -19,6 +19,7 @@ import { PhotoField, StudentAvatar } from "@/components/data/photo-field";
 import { AddressPicker, EMPTY_ADDRESS, type AddressValue } from "@/components/data/address-fields";
 import { ExportMenu } from "@/components/data/export-menu";
 import { useSession } from "@/hooks/use-session";
+import { deleteRecord } from "@/lib/ops-extra.functions";
 import { listStudents, saveStudent } from "@/lib/operations.functions";
 import { BLOOD_GROUPS, CLASS_GRADES, STUDENT_CATEGORIES } from "@/lib/form-options";
 import { validateAadhaar, validateMobile, validatePan, validatePincode } from "@/lib/validators";
@@ -290,7 +291,7 @@ const FIELDS: FieldSpec[] = [
 ];
 
 function StudentsPage() {
-  const { session, branchId } = useSession();
+  const { session, roles, branchId } = useSession();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<StudentRow | null>(null);
@@ -298,8 +299,9 @@ function StudentsPage() {
 
   const fetchList = useServerFn(listStudents);
   const save = useServerFn(saveStudent);
+  const remove = useServerFn(deleteRecord);
 
-  const { data, isPending, isError, refetch } = useQuery({
+  const { data, error, isPending, isError, refetch } = useQuery({
     queryKey: ["students", branchId],
     queryFn: () => fetchList({ data: { branchId } }),
   });
@@ -359,6 +361,14 @@ function StudentsPage() {
       void qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => remove({ data: { table: "students", id } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["students"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    },
   });
 
   const q = search.trim().toLowerCase();
@@ -495,7 +505,13 @@ function StudentsPage() {
         <EmptyState title="Select a branch" description="Students are scoped per branch." />
       )}
       {isPending && <LoadingState />}
-      {isError && <ErrorState onRetry={() => void refetch()} />}
+      {isError && (
+        <ErrorState
+          message="Unable to load students."
+          details={error instanceof Error ? error.message : "Check the browser console and server logs for the request error."}
+          onRetry={() => void refetch()}
+        />
+      )}
       {branchId && data && rows.length === 0 && (
         <EmptyState
           title="No students found"
@@ -550,6 +566,10 @@ function StudentsPage() {
               ),
             },
           ]}
+          onDelete={can(roles, "students", "delete") ? async (row) => {
+            await deleteMut.mutateAsync(row.id);
+          } : undefined}
+          deleteLabel="student"
         />
       )}
     </>

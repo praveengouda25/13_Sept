@@ -269,6 +269,8 @@ function MedicalPage() {
           {medRows.length > 0 && (
             <RecordTable
               rows={medRows}
+              deleteTable="medical_records"
+              deleteLabel="medical record"
               columns={[
                 { key: "student", header: "Student", cell: (r) => studentName(r.student_id) },
                 { key: "type", header: "Type", cell: (r) => <StatusBadge value={r.record_type} /> },
@@ -296,6 +298,8 @@ function MedicalPage() {
           {stockRows.length > 0 && (
             <RecordTable
               rows={stockRows}
+              deleteTable="medicines"
+              deleteLabel="medicine"
               columns={[
                 { key: "name", header: "Medicine", cell: (r) => r.name },
                 { key: "category", header: "Category", cell: (r) => r.category ?? "—" },

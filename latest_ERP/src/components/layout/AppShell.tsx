@@ -134,7 +134,8 @@ function UserMenu() {
   const queryClient = useQueryClient();
   const role = primaryRole(roles);
   const name = session.profile?.full_name || session.email || "Account";
-  const publicSiteUrl = (import.meta.env.VITE_PUBLIC_SITE_URL as string | undefined)?.trim() || "http://localhost:4173";
+  const publicSiteUrl =
+    (import.meta.env.VITE_PUBLIC_SITE_URL as string | undefined)?.trim() || "/";
 
   async function signOut() {
     await queryClient.cancelQueries();

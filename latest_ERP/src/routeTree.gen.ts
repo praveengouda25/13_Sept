@@ -13,9 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedAdmissionsRouteImport } from './routes/_authenticated/admissions'
-import { Route as AuthenticatedAiSettingsRouteImport } from './routes/_authenticated/ai-settings'
 import { Route as AuthenticatedAssetsRouteImport } from './routes/_authenticated/assets'
-import { Route as AuthenticatedAssistantRouteImport } from './routes/_authenticated/assistant'
 import { Route as AuthenticatedAttendanceRouteImport } from './routes/_authenticated/attendance'
 import { Route as AuthenticatedAuditRouteImport } from './routes/_authenticated/audit'
 import { Route as AuthenticatedBranchesRouteImport } from './routes/_authenticated/branches'
@@ -64,19 +62,9 @@ const AuthenticatedAdmissionsRoute = AuthenticatedAdmissionsRouteImport.update({
   path: '/admissions',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedAiSettingsRoute = AuthenticatedAiSettingsRouteImport.update({
-  id: '/ai-settings',
-  path: '/ai-settings',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedAssetsRoute = AuthenticatedAssetsRouteImport.update({
   id: '/assets',
   path: '/assets',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAssistantRoute = AuthenticatedAssistantRouteImport.update({
-  id: '/assistant',
-  path: '/assistant',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAttendanceRoute = AuthenticatedAttendanceRouteImport.update({
@@ -231,9 +219,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admissions': typeof AuthenticatedAdmissionsRoute
-  '/ai-settings': typeof AuthenticatedAiSettingsRoute
   '/assets': typeof AuthenticatedAssetsRoute
-  '/assistant': typeof AuthenticatedAssistantRoute
   '/attendance': typeof AuthenticatedAttendanceRoute
   '/audit': typeof AuthenticatedAuditRoute
   '/branches': typeof AuthenticatedBranchesRouteWithChildren
@@ -267,9 +253,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admissions': typeof AuthenticatedAdmissionsRoute
-  '/ai-settings': typeof AuthenticatedAiSettingsRoute
   '/assets': typeof AuthenticatedAssetsRoute
-  '/assistant': typeof AuthenticatedAssistantRoute
   '/attendance': typeof AuthenticatedAttendanceRoute
   '/audit': typeof AuthenticatedAuditRoute
   '/complaints': typeof AuthenticatedComplaintsRoute
@@ -304,9 +288,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/admissions': typeof AuthenticatedAdmissionsRoute
-  '/_authenticated/ai-settings': typeof AuthenticatedAiSettingsRoute
   '/_authenticated/assets': typeof AuthenticatedAssetsRoute
-  '/_authenticated/assistant': typeof AuthenticatedAssistantRoute
   '/_authenticated/attendance': typeof AuthenticatedAttendanceRoute
   '/_authenticated/audit': typeof AuthenticatedAuditRoute
   '/_authenticated/branches': typeof AuthenticatedBranchesRouteWithChildren
@@ -342,9 +324,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/admissions'
-    | '/ai-settings'
     | '/assets'
-    | '/assistant'
     | '/attendance'
     | '/audit'
     | '/branches'
@@ -378,9 +358,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/admissions'
-    | '/ai-settings'
     | '/assets'
-    | '/assistant'
     | '/attendance'
     | '/audit'
     | '/complaints'
@@ -414,9 +392,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/admissions'
-    | '/_authenticated/ai-settings'
     | '/_authenticated/assets'
-    | '/_authenticated/assistant'
     | '/_authenticated/attendance'
     | '/_authenticated/audit'
     | '/_authenticated/branches'
@@ -483,25 +459,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdmissionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/ai-settings': {
-      id: '/_authenticated/ai-settings'
-      path: '/ai-settings'
-      fullPath: '/ai-settings'
-      preLoaderRoute: typeof AuthenticatedAiSettingsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/assets': {
       id: '/_authenticated/assets'
       path: '/assets'
       fullPath: '/assets'
       preLoaderRoute: typeof AuthenticatedAssetsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/assistant': {
-      id: '/_authenticated/assistant'
-      path: '/assistant'
-      fullPath: '/assistant'
-      preLoaderRoute: typeof AuthenticatedAssistantRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/attendance': {
@@ -718,9 +680,7 @@ const AuthenticatedBranchesRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdmissionsRoute: typeof AuthenticatedAdmissionsRoute
-  AuthenticatedAiSettingsRoute: typeof AuthenticatedAiSettingsRoute
   AuthenticatedAssetsRoute: typeof AuthenticatedAssetsRoute
-  AuthenticatedAssistantRoute: typeof AuthenticatedAssistantRoute
   AuthenticatedAttendanceRoute: typeof AuthenticatedAttendanceRoute
   AuthenticatedAuditRoute: typeof AuthenticatedAuditRoute
   AuthenticatedBranchesRoute: typeof AuthenticatedBranchesRouteWithChildren
@@ -752,9 +712,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdmissionsRoute: AuthenticatedAdmissionsRoute,
-  AuthenticatedAiSettingsRoute: AuthenticatedAiSettingsRoute,
   AuthenticatedAssetsRoute: AuthenticatedAssetsRoute,
-  AuthenticatedAssistantRoute: AuthenticatedAssistantRoute,
   AuthenticatedAttendanceRoute: AuthenticatedAttendanceRoute,
   AuthenticatedAuditRoute: AuthenticatedAuditRoute,
   AuthenticatedBranchesRoute: AuthenticatedBranchesRouteWithChildren,

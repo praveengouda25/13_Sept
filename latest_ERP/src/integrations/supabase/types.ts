@@ -1428,6 +1428,7 @@ export type Database = {
           contact_phone: string | null;
           created_at: string;
           created_by: string | null;
+          deleted_at: string | null;
           destination: string | null;
           from_date: string;
           id: string;
@@ -1445,6 +1446,7 @@ export type Database = {
           contact_phone?: string | null;
           created_at?: string;
           created_by?: string | null;
+          deleted_at?: string | null;
           destination?: string | null;
           from_date: string;
           id?: string;
@@ -1462,6 +1464,7 @@ export type Database = {
           contact_phone?: string | null;
           created_at?: string;
           created_by?: string | null;
+          deleted_at?: string | null;
           destination?: string | null;
           from_date?: string;
           id?: string;
@@ -2273,7 +2276,11 @@ export type Database = {
           remarks: string | null;
           room_id: string | null;
           security_id: string | null;
-          emergency_contact: string | null;
+        emergency_contact: string | null;
+          rejection_reason: string | null;
+          rejected_by: string | null;
+          rejected_at: string | null;
+          marked_exit_by: string | null;
           status: string;
           student_id: string;
           updated_at: string;
@@ -2300,7 +2307,11 @@ export type Database = {
           remarks?: string | null;
           room_id?: string | null;
           security_id?: string | null;
-          emergency_contact?: string | null;
+        emergency_contact?: string | null;
+          rejection_reason?: string | null;
+          rejected_by?: string | null;
+          rejected_at?: string | null;
+          marked_exit_by?: string | null;
           status?: string;
           student_id: string;
           updated_at?: string;
@@ -2327,7 +2338,11 @@ export type Database = {
           remarks?: string | null;
           room_id?: string | null;
           security_id?: string | null;
-          emergency_contact?: string | null;
+        emergency_contact?: string | null;
+          rejection_reason?: string | null;
+          rejected_by?: string | null;
+          rejected_at?: string | null;
+          marked_exit_by?: string | null;
           status?: string;
           student_id?: string;
           updated_at?: string;
@@ -2832,6 +2847,8 @@ export type Database = {
       };
       visitors: {
         Row: {
+          approved_at: string | null;
+          approved_by: string | null;
           branch_id: string;
           created_at: string;
           created_by: string | null;
@@ -2845,6 +2862,9 @@ export type Database = {
           pass_code: string;
           phone: string | null;
           purpose: string | null;
+          rejected_at: string | null;
+          rejected_by: string | null;
+          rejection_reason: string | null;
           status: Database["public"]["Enums"]["visitor_status"];
           student_id: string | null;
           updated_at: string;
@@ -2852,6 +2872,8 @@ export type Database = {
           visitor_type: Database["public"]["Enums"]["visitor_type"];
         };
         Insert: {
+          approved_at?: string | null;
+          approved_by?: string | null;
           branch_id: string;
           created_at?: string;
           created_by?: string | null;
@@ -2865,6 +2887,9 @@ export type Database = {
           pass_code?: string;
           phone?: string | null;
           purpose?: string | null;
+          rejected_at?: string | null;
+          rejected_by?: string | null;
+          rejection_reason?: string | null;
           status?: Database["public"]["Enums"]["visitor_status"];
           student_id?: string | null;
           updated_at?: string;
@@ -2872,6 +2897,8 @@ export type Database = {
           visitor_type?: Database["public"]["Enums"]["visitor_type"];
         };
         Update: {
+          approved_at?: string | null;
+          approved_by?: string | null;
           branch_id?: string;
           created_at?: string;
           created_by?: string | null;
@@ -2885,6 +2912,9 @@ export type Database = {
           pass_code?: string;
           phone?: string | null;
           purpose?: string | null;
+          rejected_at?: string | null;
+          rejected_by?: string | null;
+          rejection_reason?: string | null;
           status?: Database["public"]["Enums"]["visitor_status"];
           student_id?: string | null;
           updated_at?: string;
@@ -3036,7 +3066,7 @@ export type Database = {
       staff_status: "active" | "on_leave" | "inactive";
       stock_txn_type: "in" | "out" | "adjustment";
       student_status: "applicant" | "active" | "on_leave" | "alumni" | "withdrawn";
-      visitor_status: "checked_in" | "checked_out" | "expected" | "denied";
+      visitor_status: "checked_in" | "checked_out" | "expected" | "denied" | "pending" | "approved" | "rejected" | "entered";
       visitor_type: "parent" | "guardian" | "guest" | "vendor" | "official" | "other";
     };
     CompositeTypes: {
@@ -3201,7 +3231,7 @@ export const Constants = {
       staff_status: ["active", "on_leave", "inactive"],
       stock_txn_type: ["in", "out", "adjustment"],
       student_status: ["applicant", "active", "on_leave", "alumni", "withdrawn"],
-      visitor_status: ["checked_in", "checked_out", "expected", "denied"],
+      visitor_status: ["checked_in", "checked_out", "expected", "denied", "pending", "approved", "rejected", "entered"],
       visitor_type: ["parent", "guardian", "guest", "vendor", "official", "other"],
     },
   },

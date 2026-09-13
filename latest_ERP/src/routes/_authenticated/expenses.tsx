@@ -166,6 +166,8 @@ function ExpensesPage() {
       {rows.length > 0 && (
         <RecordTable
           rows={rows}
+          deleteTable="expenses"
+          deleteLabel="expense"
           columns={[
             { key: "date", header: "Date", cell: (r) => r.spent_on },
             { key: "category", header: "Category", cell: (r) => r.category },

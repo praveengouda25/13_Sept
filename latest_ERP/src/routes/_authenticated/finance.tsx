@@ -26,10 +26,8 @@ import {
   EmptyState,
 } from "@/components/data/states";
 import { money } from "@/components/data/record-table";
-import { AiInsightCard } from "@/components/ai/insight-card";
 import { useSession } from "@/hooks/use-session";
 import { getFinanceDashboard } from "@/lib/modules.functions";
-import { getDonationInsights, getExpenseAnalysis } from "@/lib/ai.functions";
 import { exportTablePdf } from "@/lib/pdf";
 
 export const Route = createFileRoute("/_authenticated/finance")({
@@ -66,8 +64,6 @@ const COLORS = [
 function FinancePage() {
   const { branchId } = useSession();
   const fetchDash = useServerFn(getFinanceDashboard);
-  const donationInsights = useServerFn(getDonationInsights);
-  const expenseAnalysis = useServerFn(getExpenseAnalysis);
 
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["finance-dashboard", branchId],
@@ -181,18 +177,6 @@ function FinancePage() {
             </>
           )}
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <AiInsightCard
-              title="AI donation insights"
-              description="Donor retention, seasonality and follow-up suggestions."
-              run={() => donationInsights({ data: { branchId } })}
-            />
-            <AiInsightCard
-              title="AI expense analysis"
-              description="Overspend, anomalies and savings opportunities."
-              run={() => expenseAnalysis({ data: { branchId } })}
-            />
-          </div>
         </>
       )}
     </>

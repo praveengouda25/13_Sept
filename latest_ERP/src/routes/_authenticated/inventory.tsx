@@ -15,8 +15,6 @@ import {
 } from "@/components/data/states";
 import { RecordTable } from "@/components/data/record-table";
 import { QrButton, recordUrl } from "@/components/data/qr";
-import { AiInsightCard } from "@/components/ai/insight-card";
-import { getInventoryPrediction } from "@/lib/ai.functions";
 import { RecordDialog, clean, today, type FormValues } from "@/components/data/record-dialog";
 import { useSession } from "@/hooks/use-session";
 import { listInventory, saveInventoryItem, recordStockMovement } from "@/lib/operations.functions";
@@ -47,7 +45,6 @@ function InventoryPage() {
   const [open, setOpen] = useState(false);
   const [moveItem, setMoveItem] = useState<string | null>(null);
 
-  const predict = useServerFn(getInventoryPrediction);
   const fetchList = useServerFn(listInventory);
   const save = useServerFn(saveInventoryItem);
   const move = useServerFn(recordStockMovement);
@@ -175,6 +172,8 @@ function InventoryPage() {
       {rows.length > 0 && (
         <RecordTable
           rows={rows}
+          deleteTable="inventory_items"
+          deleteLabel="inventory item"
           columns={[
             { key: "name", header: "Item", cell: (r) => r.name },
             { key: "category", header: "Category", cell: (r) => r.category ?? "—" },
@@ -218,12 +217,6 @@ function InventoryPage() {
           ]}
         />
       )}
-      <AiInsightCard
-        title="AI stock prediction"
-        description="Consumption rate, when each item runs out and suggested order quantities."
-        run={() => predict({ data: { branchId } })}
-        cta="Predict restocking"
-      />
     </>
   );
 }

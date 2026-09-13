@@ -10,6 +10,7 @@ import { RecordTable, StatusBadge } from "@/components/data/record-table";
 import { RecordDialog, clean, type FormValues } from "@/components/data/record-dialog";
 import { useSession } from "@/hooks/use-session";
 import { listAdmissions, saveAdmission, enrolAdmission } from "@/lib/operations.functions";
+import { deleteRecord } from "@/lib/ops-extra.functions";
 import { listHostels } from "@/lib/foundation.functions";
 import {
   Select,
@@ -44,7 +45,7 @@ export const Route = createFileRoute("/_authenticated/admissions")({
 const STATUSES = ["draft", "submitted", "under_review", "approved", "rejected", "enrolled"];
 
 function AdmissionsPage() {
-  const { session, branchId } = useSession();
+  const { session, roles, branchId } = useSession();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string>(branchId ?? "");
@@ -53,6 +54,7 @@ function AdmissionsPage() {
   const fetchList = useServerFn(listAdmissions);
   const save = useServerFn(saveAdmission);
   const enrol = useServerFn(enrolAdmission);
+  const remove = useServerFn(deleteRecord);
   const fetchHostels = useServerFn(listHostels);
 
   const { data: hostelsData } = useQuery({
@@ -95,6 +97,11 @@ function AdmissionsPage() {
       void qc.invalidateQueries();
     },
     onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => remove({ data: { table: "admissions", id } }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admissions"] }),
   });
 
   const rows = useMemo(() => data?.admissions ?? [], [data]);
@@ -254,6 +261,10 @@ function AdmissionsPage() {
                 ),
             },
           ]}
+          onDelete={roles.some((role) => ["super_admin", "trust_admin", "branch_admin"].includes(role)) ? async (row) => {
+            await deleteMut.mutateAsync(row.id);
+          } : undefined}
+          deleteLabel="admission"
         />
       )}
     </>

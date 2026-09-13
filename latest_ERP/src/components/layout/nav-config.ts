@@ -16,7 +16,6 @@ import {
   AlertOctagon,
   UserCog,
   FileBarChart,
-  Sparkles,
   Bell,
   MessageSquareWarning,
   Wrench,
@@ -39,7 +38,6 @@ export type NavSection = { heading: string; items: NavItem[] };
 const ADMINS: AppRole[] = ["super_admin", "trust_admin", "branch_admin"];
 const OPS: AppRole[] = [...ADMINS, "warden"];
 const FINANCE: AppRole[] = [...ADMINS, "accountant"];
-const AI_ACCESS: AppRole[] = [...ADMINS, "warden"];
 const SECURITY_MODULES: AppRole[] = [...OPS, "security_guard"]; // Admins + security guard can see visitors/gate pass
 const SECURITY_DASHBOARD: AppRole[] = ["security_guard", ...OPS]; // Security dashboard for security guard + admins
 const STOCK: AppRole[] = [...OPS, "inventory_manager"];
@@ -61,7 +59,6 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, roles: ALL },
       { label: "Notifications", to: "/notifications", icon: Bell, roles: ALL },
-      { label: "AI assistant", to: "/assistant", icon: Sparkles, roles: AI_ACCESS },
     ],
   },
   {

@@ -168,6 +168,8 @@ function IssuesPage() {
       {rows.length > 0 && (
         <RecordTable
           rows={rows}
+          deleteTable="issues"
+          deleteLabel="issue"
           columns={[
             { key: "date", header: "Reported", cell: (r) => r.reported_on },
             { key: "title", header: "Issue", cell: (r) => r.title },

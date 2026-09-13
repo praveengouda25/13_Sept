@@ -18,6 +18,7 @@ export function VideoSection() {
     if (!section || !video) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
+        if (!entry) return;
         if (entry.isIntersecting && entry.intersectionRatio >= 0.35) {
           if (!userPaused.current) void video.play().catch(() => undefined);
         } else if (!video.paused) {

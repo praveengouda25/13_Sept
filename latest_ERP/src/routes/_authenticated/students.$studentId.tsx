@@ -66,7 +66,7 @@ function StudentDetailPage() {
   const doAllocate = useServerFn(allocateBed);
   const doVacate = useServerFn(vacateBed);
 
-  const { data, isPending, isError, refetch } = useQuery({
+  const { data, error, isPending, isError, refetch } = useQuery({
     queryKey: ["student-detail", studentId],
     queryFn: () => fetchDetail({ data: { studentId } }),
   });
@@ -102,7 +102,15 @@ function StudentDetailPage() {
   });
 
   if (isPending) return <LoadingState />;
-  if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
+  if (isError || !data) {
+    return (
+      <ErrorState
+        message="Unable to load this student."
+        details={error instanceof Error ? error.message : undefined}
+        onRetry={() => void refetch()}
+      />
+    );
+  }
 
   const s = data.student as Record<string, string | null>;
   const name = `${s.first_name ?? ""} ${s.last_name ?? ""}`.trim();

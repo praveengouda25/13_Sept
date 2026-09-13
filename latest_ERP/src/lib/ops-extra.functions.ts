@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Server functions for the notification centre, complaints, maintenance,
@@ -11,6 +12,32 @@ import type { Database } from "@/integrations/supabase/types";
 const uuid = z.string().uuid();
 const branchScope = z.object({ branchId: z.string().uuid().nullable().optional() });
 const dateStr = z.string().min(4).max(20);
+const dateTimeStr = z.string().min(4).max(40);
+
+function throwGatePassError(action: string, error: { message: string }, fallback: string): never {
+  console.error(`[gate-pass] ${action}`, error);
+  if (/invalid gate pass status transition/i.test(error.message)) {
+    throw new Error("This status change is not allowed for the current gate pass.");
+  }
+  if (/already been marked/i.test(error.message)) {
+    throw new Error("Exit has already been marked for this gate pass.");
+  }
+  if (/permission denied|row-level security|not authorized/i.test(error.message)) {
+    throw new Error("You do not have permission to update this gate pass.");
+  }
+  if (/function .* does not exist|schema cache|column .* does not exist/i.test(error.message)) {
+    throw new Error(
+      "The Gatepass database workflow is not fully installed. Apply the latest Supabase migration.",
+    );
+  }
+  throw new Error(error.message || fallback);
+}
+
+function isSchemaCompatibilityError(error: { message?: string; code?: string } | null) {
+  if (!error) return false;
+  const message = String(error.message ?? "").toLowerCase();
+  return error.code === "42703" || error.code === "PGRST204" || message.includes("schema cache");
+}
 
 /* ------------------------------ notifications ----------------------------- */
 
@@ -439,7 +466,6 @@ export const globalSearch = createServerFn({ method: "POST" })
       bedsQ,
       guardiansQ,
     ]);
-
     return {
       students: students.data ?? [],
       rooms: rooms.data ?? [],
@@ -549,18 +575,6 @@ export const listVisitors = createServerFn({ method: "POST" })
     return { visitors: rows ?? [] };
   });
 
-export const checkoutVisitor = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .validator((input) => z.object({ id: uuid }).parse(input))
-  .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
-      .from("visitors")
-      .update({ exit_at: new Date().toISOString(), status: "checked_out" })
-      .eq("id", data.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
 export const saveVisitor = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((input) =>
@@ -590,12 +604,105 @@ export const saveVisitor = createServerFn({ method: "POST" })
     }
     const { data: row, error } = await context.supabase
       .from("visitors")
-      .insert({ ...fields, created_by: context.userId })
+      .insert({ ...fields, status: "checked_in", created_by: context.userId })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
     return { id: row.id };
   });
+
+type VisitorSupabase = SupabaseClient<Database>;
+
+async function changeVisitorStatus(
+  supabase: VisitorSupabase,
+  userId: string,
+  id: string,
+  nextStatus: "approved" | "rejected" | "entered" | "checked_out",
+  rejectionReason?: string | null,
+) {
+  const [{ data: current, error: currentError }, { data: roleRows, error: roleError }] =
+    await Promise.all([
+      supabase.from("visitors").select("status, branch_id").eq("id", id).maybeSingle(),
+      supabase.from("user_roles").select("role").eq("user_id", userId),
+    ]);
+  if (currentError) throw new Error(currentError.message);
+  if (roleError) throw new Error(roleError.message);
+  if (!current) throw new Error("Visitor record not found");
+
+  const roles = new Set((roleRows ?? []).map((row) => row.role));
+  const approver = ["super_admin", "trust_admin", "branch_admin", "warden"].some((role) =>
+    roles.has(role as Database["public"]["Enums"]["app_role"]),
+  );
+  const security = roles.has("security_guard");
+  const transitions: Record<string, string[]> = {
+    pending: ["approved", "rejected"],
+    approved: ["entered"],
+    entered: ["checked_out"],
+    checked_in: ["checked_out"],
+    checked_out: [],
+    rejected: [],
+  };
+  if (!transitions[current.status]?.includes(nextStatus)) {
+    throw new Error(`Cannot change a ${current.status} visitor to ${nextStatus}`);
+  }
+  if (["approved", "rejected"].includes(nextStatus) && !approver) {
+    throw new Error("Only an authorized administrator or warden can approve or reject visitors");
+  }
+  if (["entered", "checked_out"].includes(nextStatus) && !approver && !security) {
+    throw new Error("Only security staff can record visitor entry or exit");
+  }
+
+  const fields: Database["public"]["Tables"]["visitors"]["Update"] = { status: nextStatus };
+  if (nextStatus === "approved") {
+    fields.approved_by = userId;
+    fields.approved_at = new Date().toISOString();
+  }
+  if (nextStatus === "rejected") {
+    fields.rejected_by = userId;
+    fields.rejected_at = new Date().toISOString();
+    fields.rejection_reason = rejectionReason ?? null;
+  }
+  if (nextStatus === "entered") fields.entry_at = new Date().toISOString();
+  if (nextStatus === "checked_out") fields.exit_at = new Date().toISOString();
+  const { error } = await supabase
+    .from("visitors")
+    .update(fields)
+    .eq("id", id)
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return { id };
+}
+
+export const approveVisitor = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input) => z.object({ id: uuid }).parse(input))
+  .handler(({ data, context }) =>
+    changeVisitorStatus(context.supabase, context.userId, data.id, "approved"),
+  );
+
+export const rejectVisitor = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input) =>
+    z.object({ id: uuid, reason: z.string().max(600).nullable().optional() }).parse(input),
+  )
+  .handler(({ data, context }) =>
+    changeVisitorStatus(context.supabase, context.userId, data.id, "rejected", data.reason),
+  );
+
+export const markVisitorEntry = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input) => z.object({ id: uuid }).parse(input))
+  .handler(({ data, context }) =>
+    changeVisitorStatus(context.supabase, context.userId, data.id, "entered"),
+  );
+
+export const checkoutVisitor = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input) => z.object({ id: uuid }).parse(input))
+  .handler(({ data, context }) =>
+    changeVisitorStatus(context.supabase, context.userId, data.id, "checked_out"),
+  );
 
 /* --------------------------- student gate passes --------------------------- */
 
@@ -611,7 +718,10 @@ export const listGatePasses = createServerFn({ method: "POST" })
       .limit(500);
     if (data.branchId) q = q.eq("branch_id", data.branchId);
     const { data: rows, error } = await q;
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[gate-pass] listGatePasses", error);
+      throw new Error("Unable to load gate passes. Please check your permissions.");
+    }
     return { gatePasses: rows ?? [] };
   });
 
@@ -628,14 +738,18 @@ export const saveGatePass = createServerFn({ method: "POST" })
         bed_id: uuid.nullable().optional(),
         purpose: z.string().min(1).max(300).optional(),
         destination: z.string().max(300).nullable().optional(),
-        out_time: dateStr.optional(),
-        expected_return_time: dateStr.nullable().optional(),
-        actual_return_time: dateStr.nullable().optional(),
-        actual_exit_time: dateStr.nullable().optional(),
+        out_time: dateTimeStr.optional(),
+        expected_return_time: dateTimeStr.nullable().optional(),
+        actual_return_time: dateTimeStr.nullable().optional(),
+        actual_exit_time: dateTimeStr.nullable().optional(),
         parent_contact: z.string().max(100).nullable().optional(),
         emergency_contact: z.string().max(100).nullable().optional(),
-        approved_at: dateStr.nullable().optional(),
+        approved_at: dateTimeStr.nullable().optional(),
         approved_by: uuid.nullable().optional(),
+        rejection_reason: z.string().max(600).nullable().optional(),
+        rejected_by: uuid.nullable().optional(),
+        rejected_at: dateTimeStr.nullable().optional(),
+        marked_exit_by: uuid.nullable().optional(),
         security_id: uuid.nullable().optional(),
         status: z
           .enum(["pending", "approved", "out", "returned", "late_return", "rejected", "closed"])
@@ -652,7 +766,9 @@ export const saveGatePass = createServerFn({ method: "POST" })
       .eq("user_id", context.userId);
     if (roleError) throw new Error(roleError.message);
     const roles = new Set<string>(roleRows?.map((row) => row.role) ?? []);
-    const isApprover = ["super_admin", "trust_admin", "branch_admin", "warden"].some((role) => roles.has(role));
+    const isApprover = ["super_admin", "trust_admin", "branch_admin", "warden"].some((role) =>
+      roles.has(role),
+    );
     const isSecurity = roles.has("security_guard") && !isApprover;
     const { id, ...rawFields } = data;
     const fields = Object.fromEntries(
@@ -661,69 +777,238 @@ export const saveGatePass = createServerFn({ method: "POST" })
     if (id) {
       const { data: current, error: currentError } = await context.supabase
         .from("student_gate_passes")
-        .select("status")
+        .select("status, branch_id")
         .eq("id", id)
         .maybeSingle();
-      if (currentError) throw new Error(currentError.message);
-      if (!current) throw new Error("Gate pass not found");
+      if (currentError) {
+        throwGatePassError(
+          "saveGatePass load",
+          currentError,
+          "Unable to update gate pass. Please try again.",
+        );
+      }
+      if (!current) throw new Error("Gate pass not found.");
 
       const nextStatus = typeof fields.status === "string" ? fields.status : current.status;
+      if (data.status && nextStatus === current.status) {
+        throw new Error(`This gate pass is already ${current.status}.`);
+      }
       const allowedTransitions: Record<string, string[]> = {
-        pending: ["pending", "approved", "rejected"],
-        approved: ["approved", "out", "rejected"],
-        out: ["out", "returned", "late_return"],
-        returned: ["returned", "closed"],
-        late_return: ["late_return", "closed"],
-        rejected: ["rejected", "pending"],
-        closed: ["closed"],
+        pending: ["approved", "rejected"],
+        approved: ["out"],
+        out: ["returned", "late_return"],
+        returned: ["closed"],
+        late_return: ["closed"],
+        rejected: [],
+        closed: [],
       };
-      if (!allowedTransitions[current.status]?.includes(nextStatus)) {
-        throw new Error(`Cannot change a ${current.status} gate pass to ${nextStatus}`);
+      if (
+        nextStatus !== current.status &&
+        !allowedTransitions[current.status]?.includes(nextStatus)
+      ) {
+        throw new Error(`Cannot change a ${current.status} gate pass to ${nextStatus}.`);
       }
-      if (isSecurity && !["out", "returned", "late_return"].includes(nextStatus)) {
-        throw new Error("Security Guard can only verify exit and return for an approved pass");
+      if (
+        nextStatus !== current.status &&
+        isSecurity &&
+        !["out", "returned", "late_return"].includes(nextStatus)
+      ) {
+        throw new Error("Security Guard can only verify exit and return for an approved pass.");
       }
-      if (!isSecurity && !isApprover) throw new Error("You are not authorized to update gate passes");
-      if (["approved", "rejected", "closed"].includes(nextStatus) && !isApprover) {
-        throw new Error("Only an authorized warden or administrator can perform this action");
+      if (!isSecurity && !isApprover)
+        throw new Error("You are not authorized to update gate passes.");
+      if (
+        nextStatus !== current.status &&
+        ["approved", "rejected", "closed"].includes(nextStatus) &&
+        !isApprover
+      ) {
+        throw new Error("Only an authorized warden or administrator can perform this action.");
       }
-      if (nextStatus === "approved") {
+      if (nextStatus === "approved" && nextStatus !== current.status) {
         fields.approved_by = context.userId;
         fields.approved_at = new Date().toISOString();
+        fields.rejected_by = null;
+        fields.rejected_at = null;
+        fields.rejection_reason = null;
       }
-      if (nextStatus === "out") {
+      if (nextStatus === "rejected" && nextStatus !== current.status) {
+        fields.rejected_by = context.userId;
+        fields.rejected_at = new Date().toISOString();
+      }
+      if (nextStatus === "out" && nextStatus !== current.status) {
         fields.actual_exit_time ??= new Date().toISOString();
+        fields.marked_exit_by = context.userId;
         fields.security_id = context.userId;
       }
-      if (nextStatus === "returned" || nextStatus === "late_return") {
+      if (
+        (nextStatus === "returned" || nextStatus === "late_return") &&
+        nextStatus !== current.status
+      ) {
         fields.actual_return_time ??= new Date().toISOString();
         fields.security_id = context.userId;
       }
       const { error } = await context.supabase
         .from("student_gate_passes")
         .update(fields)
-        .eq("id", id);
-      if (error) throw new Error(error.message);
+        .eq("id", id)
+        .select("id")
+        .single();
+      if (error) {
+        const fallback =
+          nextStatus === "approved"
+            ? "Unable to approve gate pass. Please try again."
+            : nextStatus === "rejected"
+              ? "Unable to reject gate pass. Please try again."
+              : nextStatus === "out"
+                ? "Unable to mark student exit. Please try again."
+                : "Unable to update gate pass. Please try again.";
+        throwGatePassError("saveGatePass update", error, fallback);
+      }
       return { id };
     }
     if (!data.branch_id || !data.student_id || !data.purpose || !data.out_time) {
-      throw new Error("Student, purpose, branch and exit time are required");
+      throw new Error("Student, purpose, branch and exit time are required.");
     }
-    if (!isApprover) throw new Error("Only hostel staff can create gate passes");
-    const { data: row, error } = await context.supabase
+    if (!isApprover) throw new Error("Only hostel staff can create gate passes.");
+    const insertPayload = {
+      branch_id: data.branch_id,
+      student_id: data.student_id,
+      purpose: data.purpose,
+      destination: data.destination ?? null,
+      out_time: data.out_time,
+      expected_return_time: data.expected_return_time ?? null,
+      parent_contact: data.parent_contact ?? null,
+      emergency_contact: data.emergency_contact ?? null,
+      remarks: data.remarks ?? null,
+      status: "pending" as const,
+      created_by: context.userId,
+    };
+    let { data: row, error } = await context.supabase
       .from("student_gate_passes")
-      .insert({
-        ...fields,
-        branch_id: data.branch_id,
-        student_id: data.student_id,
-        purpose: data.purpose,
-        out_time: data.out_time,
-        created_by: context.userId,
-      })
+      .insert(insertPayload as never)
       .select("id")
       .single();
-    if (error) throw new Error(error.message);
+    if (error && isSchemaCompatibilityError(error)) {
+      ({ data: row, error } = await context.supabase
+        .from("student_gate_passes")
+        .insert({
+          branch_id: data.branch_id,
+          student_id: data.student_id,
+          purpose: data.purpose,
+          destination: data.destination ?? null,
+          out_time: data.out_time,
+          expected_return_time: data.expected_return_time ?? null,
+          remarks: data.remarks ?? null,
+          status: "pending",
+          created_by: context.userId,
+        } as never)
+        .select("id")
+        .single());
+    }
+    if (error) {
+      throwGatePassError(
+        "saveGatePass insert",
+        error,
+        "Unable to save gate pass. Please try again.",
+      );
+    }
     return { id: row.id };
+  });
+
+/* ----------------------------- protected delete ---------------------------- */
+
+const DELETE_TARGETS = {
+  students: "students",
+  admissions: "admissions",
+  hostels: "hostels",
+  buildings: "buildings",
+  floors: "floors",
+  rooms: "rooms",
+  beds: "beds",
+  student_gate_passes: "student_gate_passes",
+  visitors: "visitors",
+  medical_records: "medical_records",
+  medicines: "medicines",
+  vendors: "vendors",
+  mess_menus: "mess_menus",
+  food_stock: "food_stock",
+  assets: "assets",
+  donations: "donations",
+  expenses: "expenses",
+  inventory_items: "inventory_items",
+  issues: "issues",
+  complaints: "complaints",
+  maintenance_requests: "maintenance_requests",
+  staff: "staff",
+  attendance: "attendance",
+  leave_requests: "leave_requests",
+} as const;
+
+const DELETE_ROLES = new Set(["super_admin", "trust_admin", "branch_admin"]);
+
+export const deleteRecord = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input) =>
+    z
+      .object({
+        table: z.enum(
+          Object.keys(DELETE_TARGETS) as [
+            keyof typeof DELETE_TARGETS,
+            ...(keyof typeof DELETE_TARGETS)[],
+          ],
+        ),
+        id: uuid,
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: roleRows, error: roleError } = await context.supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", context.userId);
+    if (roleError) throw new Error(roleError.message);
+    if (!(roleRows ?? []).some((row) => DELETE_ROLES.has(row.role))) {
+      throw new Error("Only authorized administrators can delete records");
+    }
+
+    const table = DELETE_TARGETS[data.table];
+    const usesSoftDelete = data.table !== "leave_requests";
+    const { data: existing, error: findError } = await context.supabase
+      .from(table as never)
+      .select(usesSoftDelete ? "id, deleted_at" : "id")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (findError) throw new Error(findError.message);
+    if (!existing || (usesSoftDelete && (existing as { deleted_at?: string | null }).deleted_at)) {
+      throw new Error("Record not found");
+    }
+    if (table === "student_gate_passes") {
+      const { data: gatePass, error: gatePassError } = await context.supabase
+        .from("student_gate_passes")
+        .select("status")
+        .eq("id", data.id)
+        .single();
+      if (gatePassError) throw new Error(gatePassError.message);
+      if (["out", "returned", "late_return"].includes(gatePass.status)) {
+        throw new Error("An active or completed gate pass cannot be deleted");
+      }
+    }
+
+    const { error } = usesSoftDelete
+      ? await context.supabase
+          .from(table as never)
+          .update({ deleted_at: new Date().toISOString() } as never)
+          .eq("id", data.id)
+          .select("id")
+          .single()
+      : await context.supabase
+          .from("leave_requests")
+          .delete()
+          .eq("id", data.id)
+          .select("id")
+          .single();
+    if (error) throw new Error(error.message);
+    return { id: data.id, table };
   });
 
 /* --------------------------- security dashboard --------------------------- */
@@ -759,7 +1044,7 @@ export const getSecurityStats = createServerFn({ method: "POST" })
 
     if (!b) return empty;
 
-    const [visitors, gatePasses, logs, visitorCount, passCount] = await Promise.all([
+    const [visitors, gatePasses, visitorCount, passCount] = await Promise.all([
       supabase
         .from("visitors")
         .select("*")
@@ -775,13 +1060,6 @@ export const getSecurityStats = createServerFn({ method: "POST" })
         .order("out_time", { ascending: false })
         .limit(100),
       supabase
-        .from("security_logs")
-        .select("*")
-        .eq("branch_id", b)
-        .eq("resolved", false)
-        .order("occurred_at", { ascending: false })
-        .limit(50),
-      supabase
         .from("visitors")
         .select("id", { count: "exact", head: true })
         .is("deleted_at", null)
@@ -793,12 +1071,20 @@ export const getSecurityStats = createServerFn({ method: "POST" })
         .eq("branch_id", b),
     ]);
 
-    const failed = [visitors, gatePasses, logs, visitorCount, passCount].find((r) => r.error);
+    const logs = await supabase
+      .from("security_logs")
+      .select("*")
+      .eq("branch_id", b)
+      .eq("resolved", false)
+      .order("occurred_at", { ascending: false })
+      .limit(50);
+    const failed = [visitors, gatePasses, visitorCount, passCount].find((r) => r.error);
     if (failed?.error) throw new Error(failed.error.message);
 
     const visitorRows = visitors.data ?? [];
     const passRows = gatePasses.data ?? [];
-    const logRows = logs.data ?? [];
+    // Security alerts are optional; an older project may not have this table yet.
+    const logRows = logs.error ? [] : (logs.data ?? []);
 
     const todayVisitorRows = visitorRows.filter((v) => v.entry_at && v.entry_at >= today);
     const todayPassRows = passRows.filter((p) => p.out_time && p.out_time >= today);

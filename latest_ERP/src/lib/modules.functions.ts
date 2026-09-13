@@ -545,7 +545,21 @@ export const getStudentDetail = createServerFn({ method: "POST" })
         .limit(120),
     ]);
 
-    if (student.error) throw new Error(student.error.message);
+    const failed = [
+      ["student", student.error],
+      ["timeline", timeline.error],
+      ["bed allocations", allocation.error],
+      ["medical records", medical.error],
+      ["leave requests", leaves.error],
+      ["attendance", attendance.error],
+    ].find(([, error]) => error);
+    if (failed) {
+      const error = failed[1];
+      console.error(`[student detail] ${failed[0]}`, error);
+      throw new Error(
+        `Unable to load ${failed[0]} (${error?.code ?? "database error"}): ${error?.message ?? "Unknown database error"}`,
+      );
+    }
     if (!student.data) throw new Error("Student not found");
 
     return {

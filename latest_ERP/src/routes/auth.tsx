@@ -86,10 +86,15 @@ function AuthPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
-      if (error.message.includes("Email not confirmed")) {
+      const message = error.message.toLowerCase();
+      if (message.includes("invalid api key") || message.includes("invalid api")) {
+        toast.error("Supabase authentication is not configured with a valid public API key.");
+      } else if (message.includes("email not confirmed")) {
         toast.error("Please confirm your email before signing in.");
+      } else if (message.includes("invalid login credentials")) {
+        toast.error("The email or password is incorrect.");
       } else {
-        toast.error("We couldn't sign you in. Please check your email and password and try again.");
+        toast.error(error.message);
       }
       return;
     }
@@ -120,7 +125,12 @@ function AuthPage() {
     });
     setLoading(false);
     if (error) {
-      toast.error(error.message);
+      const message = error.message.toLowerCase();
+      toast.error(
+        message.includes("invalid api key") || message.includes("invalid api")
+          ? "Supabase authentication is not configured with a valid public API key."
+          : error.message,
+      );
       return;
     }
 

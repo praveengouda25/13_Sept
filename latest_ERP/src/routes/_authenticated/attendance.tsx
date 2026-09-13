@@ -53,10 +53,12 @@ function AttendancePage() {
   const students = useQuery({
     queryKey: ["students", branchId],
     queryFn: () => fetchStudents({ data: { branchId } }),
+    enabled: Boolean(branchId),
   });
   const attendance = useQuery({
     queryKey: ["attendance", branchId, date],
     queryFn: () => fetchAttendance({ data: { branchId, date } }),
+    enabled: Boolean(branchId),
   });
 
   const markMut = useMutation({
@@ -112,10 +114,19 @@ function AttendancePage() {
       {!branchId && (
         <EmptyState title="Select a branch" description="Attendance is recorded per branch." />
       )}
-      {(students.isPending || attendance.isPending) && <LoadingState />}
-      {students.isError && <ErrorState onRetry={() => void students.refetch()} />}
+      {branchId && (students.isPending || attendance.isPending) && <LoadingState />}
+      {(students.isError || attendance.isError) && (
+        <ErrorState
+          message="Unable to load attendance records"
+          details="Please check your permissions or try again."
+          onRetry={() => {
+            void students.refetch();
+            void attendance.refetch();
+          }}
+        />
+      )}
 
-      {students.data && rows.length === 0 && (
+      {students.data && attendance.data && rows.length === 0 && (
         <EmptyState
           title="No students yet"
           description="Enrol students from Admissions to start marking attendance."

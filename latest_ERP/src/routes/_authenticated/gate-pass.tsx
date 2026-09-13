@@ -30,7 +30,7 @@ import { RecordTable, StatusBadge } from "@/components/data/record-table";
 import { RecordDialog, clean, type FormValues } from "@/components/data/record-dialog";
 import { QrButton, recordUrl } from "@/components/data/qr";
 import { useSession } from "@/hooks/use-session";
-import { listGatePasses, saveGatePass } from "@/lib/ops-extra.functions";
+import { deleteRecord, listGatePasses, saveGatePass } from "@/lib/ops-extra.functions";
 import { listStudents } from "@/lib/operations.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -142,6 +142,7 @@ const FIELDS: FieldSpec[] = [
 function GatePassPage() {
   const { branchId, roles } = useSession();
   const canApprove = roles.some((role) => ["super_admin", "trust_admin", "branch_admin", "warden"].includes(role));
+  const canDelete = roles.some((role) => ["super_admin", "trust_admin", "branch_admin"].includes(role));
   const isSecurity = roles.includes("security_guard") && !canApprove;
   const canCreate = can(roles, "gatepass", "create") && !isSecurity;
   const qc = useQueryClient();
@@ -154,15 +155,18 @@ function GatePassPage() {
   const fetchList = useServerFn(listGatePasses);
   const fetchStudents = useServerFn(listStudents);
   const save = useServerFn(saveGatePass);
+  const remove = useServerFn(deleteRecord);
 
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["gate-passes", branchId],
     queryFn: () => fetchList({ data: { branchId } }),
+    enabled: Boolean(branchId),
   });
 
   const { data: studentsData } = useQuery({
     queryKey: ["students", branchId],
     queryFn: () => fetchStudents({ data: { branchId } }),
+    enabled: Boolean(branchId),
   });
 
   const studentOptions =
@@ -252,6 +256,13 @@ function GatePassPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => remove({ data: { table: "student_gate_passes", id } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["gate-passes"] });
+    },
+  });
+
   const closeMut = useMutation({
     mutationFn: (id: string) => save({ data: { id, status: "closed" } }),
     onSuccess: () => {
@@ -330,7 +341,7 @@ function GatePassPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Approved" value={stats.approved} tone="success" icon={CheckCircle} />
+        <StatCard label="Accepted" value={stats.approved} tone="success" icon={CheckCircle} />
         <StatCard label="Rejected" value={stats.rejected} tone="destructive" icon={Clock} />
         <StatCard label="Late Returns" value={stats.lateReturns} tone="accent" icon={Clock} />
       </div>
@@ -342,7 +353,7 @@ function GatePassPage() {
         <CardContent className="flex flex-wrap gap-2">
           {[
             ["pending", "Pending"],
-            ["approved", "Approved"],
+            ["approved", "Accepted"],
             ["out", "Exited / Currently Out"],
             ["returned", "Returned"],
             ["closed", "Closed"],
@@ -444,7 +455,7 @@ function GatePassPage() {
             <TabsList>
               <TabsTrigger value="all">All Passes</TabsTrigger>
               <TabsTrigger value="pending">Pending</TabsTrigger>
-              <TabsTrigger value="approved">Approved</TabsTrigger>
+              <TabsTrigger value="approved">Accepted</TabsTrigger>
               <TabsTrigger value="out">Currently Out</TabsTrigger>
               <TabsTrigger value="returned">Returned</TabsTrigger>
               <TabsTrigger value="closed">Closed</TabsTrigger>
@@ -481,60 +492,91 @@ function GatePassPage() {
                   {
                     key: "status",
                     header: "Status",
-                    cell: (r) => <StatusBadge value={r.status} />,
+                    cell: (r) => <StatusBadge value={r.status === "approved" ? "accepted" : r.status} />,
+                  },
+                  {
+                    key: "accepted",
+                    header: "Accepted",
+                    cell: (r) => {
+                      const pending = approveMut.isPending && approveMut.variables === r.id;
+                      const disabled = pending || approveMut.isPending || rejectMut.isPending || markExitMut.isPending;
+                      if (r.status !== "pending" || !canApprove) return <span className="text-muted-foreground">-</span>;
+                      return (
+                        <Button
+                          size="sm"
+                          disabled={disabled}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            approveMut.mutate(r.id);
+                          }}
+                        >
+                          {pending ? "Saving..." : "Accepted"}
+                        </Button>
+                      );
+                    },
+                  },
+                  {
+                    key: "rejected",
+                    header: "Rejected",
+                    cell: (r) => {
+                      const pending = rejectMut.isPending && rejectMut.variables === r.id;
+                      const disabled = pending || approveMut.isPending || rejectMut.isPending || markExitMut.isPending;
+                      if (r.status !== "pending" || !canApprove) return <span className="text-muted-foreground">-</span>;
+                      return (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={disabled}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            rejectMut.mutate(r.id);
+                          }}
+                        >
+                          {pending ? "Saving..." : "Rejected"}
+                        </Button>
+                      );
+                    },
+                  },
+                  {
+                    key: "mark-exit",
+                    header: "Mark Exit",
+                    cell: (r) => {
+                      const pending = markExitMut.isPending && markExitMut.variables === r.id;
+                      const disabled =
+                        pending ||
+                        !isSecurity && !canApprove ||
+                        approveMut.isPending ||
+                        rejectMut.isPending ||
+                        markExitMut.isPending;
+                      if (r.status !== "approved") return <span className="text-muted-foreground">-</span>;
+                      return (
+                        <Button
+                          size="sm"
+                          disabled={disabled}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            markExitMut.mutate(r.id);
+                          }}
+                        >
+                          {pending ? "Saving..." : "Mark Exit"}
+                        </Button>
+                      );
+                    },
                   },
                   {
                     key: "actions",
-                    header: "Actions",
+                    header: "Details",
                     cell: (r) => (
-                      <div className="flex gap-2">
-                        {r.status === "pending" && canApprove && (
-                          <>
-                            <Button size="sm" onClick={() => {
-                              if (window.confirm("Are you sure you want to approve this gate pass?")) approveMut.mutate(r.id);
-                            }}>
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => {
-                                if (window.confirm("Are you sure you want to reject this gate pass?")) rejectMut.mutate(r.id);
-                              }}
-                            >
-                              Reject
-                            </Button>
-                          </>
-                        )}
-                        {r.status === "approved" && (
-                          <Button size="sm" disabled={!isSecurity && !canApprove} onClick={() => {
-                            if (window.confirm("Confirm that the student is leaving the hostel.")) markExitMut.mutate(r.id);
-                          }}>
-                            Mark Exit
-                          </Button>
-                        )}
-                        {r.status === "out" && (
-                          <Button size="sm" disabled={!isSecurity && !canApprove} onClick={() => {
-                            if (window.confirm("Confirm that the student has returned.")) markReturnMut.mutate(r.id);
-                          }}>
-                            Mark Return
-                          </Button>
-                        )}
-                        {(r.status === "returned" || r.status === "late_return") && (
-                          <Button size="sm" disabled={!canApprove} onClick={() => {
-                            if (window.confirm("Close this returned gate pass?")) closeMut.mutate(r.id);
-                          }}>
-                            Close
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEdit(r)}
-                        >
-                          Details
-                        </Button>
-                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openEdit(r);
+                        }}
+                      >
+                        Details
+                      </Button>
                     ),
                   },
                   {
@@ -549,6 +591,10 @@ function GatePassPage() {
                     ),
                   },
                 ]}
+                onDelete={canDelete ? async (row) => {
+                  await deleteMut.mutateAsync(row.id);
+                } : undefined}
+                deleteLabel="gate pass"
               />
             </TabsContent>
           </Tabs>

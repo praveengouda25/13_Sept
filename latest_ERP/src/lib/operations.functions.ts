@@ -30,7 +30,30 @@ export const listStudents = createServerFn({ method: "POST" })
       .limit(500);
     if (data.branchId) q = q.eq("branch_id", data.branchId);
     const { data: rows, error } = await q;
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[students] listStudents", error);
+      throw new Error(`Unable to load students (${error.code ?? "database error"}): ${error.message}`);
+    }
+    return { students: rows ?? [] };
+  });
+
+/** Lightweight student picker used by Leave and Gate Pass (existing live columns only). */
+export const listStudentOptions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input) => branchScope.parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    let q = context.supabase
+      .from("students")
+      .select("id, first_name, last_name, admission_number, status")
+      .is("deleted_at", null)
+      .order("first_name", { ascending: true })
+      .limit(500);
+    if (data.branchId) q = q.eq("branch_id", data.branchId);
+    const { data: rows, error } = await q;
+    if (error) {
+      console.error("[leave/gate-pass] listStudentOptions", error);
+      throw new Error("Unable to load students for this branch.");
+    }
     return { students: rows ?? [] };
   });
 
@@ -101,8 +124,29 @@ export const saveStudent = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { id, ...fields } = data;
     if (id) {
-      const { error } = await context.supabase.from("students").update(fields).eq("id", id);
-      if (error) throw new Error(error.message);
+      const { data: current, error: currentError } = await context.supabase
+        .from("students")
+        .select("id, photo_url")
+        .eq("id", id)
+        .single();
+      if (currentError) {
+        console.error("[students] load before update", currentError);
+        throw new Error(`Unable to update student (${currentError.code ?? "database error"}): ${currentError.message}`);
+      }
+      const { data: updated, error } = await context.supabase
+        .from("students")
+        .update(fields)
+        .eq("id", id)
+        .select("id")
+        .single();
+      if (error || !updated) {
+        console.error("[students] update", error);
+        throw new Error(`Unable to update student (${error?.code ?? "no row updated"}): ${error?.message ?? "The record was not updated."}`);
+      }
+      if (current.photo_url && current.photo_url !== fields.photo_url && !/^https?:\/\//i.test(current.photo_url)) {
+        const { error: removeError } = await context.supabase.storage.from("student-photos").remove([current.photo_url]);
+        if (removeError) console.warn("[students] old photo cleanup", removeError.message);
+      }
       return { id };
     }
     const { data: row, error } = await context.supabase
@@ -258,18 +302,24 @@ export const markAttendance = createServerFn({ method: "POST" })
 
 /* ---------------------------------- leave --------------------------------- */
 
+const LEAVE_COLUMNS =
+  "id, branch_id, student_id, from_date, to_date, reason, destination, contact_phone, status, reviewed_by, reviewed_at, review_notes, created_at, updated_at, created_by, students(first_name, last_name, admission_number)";
+
 export const listLeaves = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((input) => branchScope.parse(input ?? {}))
   .handler(async ({ data, context }) => {
     let q = context.supabase
       .from("leave_requests")
-      .select("*")
+      .select(LEAVE_COLUMNS)
       .order("created_at", { ascending: false })
       .limit(300);
     if (data.branchId) q = q.eq("branch_id", data.branchId);
     const { data: rows, error } = await q;
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[leave] listLeaves", error);
+      throw new Error("Unable to load leave requests. Please check your permissions.");
+    }
     return { leaves: rows ?? [] };
   });
 
@@ -279,10 +329,10 @@ export const saveLeave = createServerFn({ method: "POST" })
     z
       .object({
         id: uuid.optional(),
-        branch_id: uuid,
-        student_id: uuid,
-        from_date: dateStr,
-        to_date: dateStr,
+        branch_id: uuid.optional(),
+        student_id: uuid.optional(),
+        from_date: dateStr.optional(),
+        to_date: dateStr.optional(),
         reason: z.string().max(600).optional(),
         destination: z.string().max(160).nullable().optional(),
         contact_phone: z.string().max(30).nullable().optional(),
@@ -294,23 +344,62 @@ export const saveLeave = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { id, ...fields } = data;
     if (id) {
+      const { data: current, error: currentError } = await context.supabase
+        .from("leave_requests")
+        .select("id, status")
+        .eq("id", id)
+        .maybeSingle();
+      if (currentError) {
+        console.error("[leave] saveLeave load", currentError);
+        throw new Error("Unable to update leave request. Please try again.");
+      }
+      if (!current) throw new Error("Leave request not found.");
+
+      const nextStatus = fields.status ?? current.status;
+      if (nextStatus !== current.status) {
+        if (current.status !== "pending" || !["approved", "rejected", "cancelled"].includes(nextStatus)) {
+          throw new Error(`Cannot change a ${current.status} leave request to ${nextStatus}.`);
+        }
+      }
+
       const reviewed =
-        fields.status && fields.status !== "pending"
+        nextStatus !== "pending" && nextStatus !== current.status
           ? { reviewed_by: context.userId, reviewed_at: new Date().toISOString() }
           : {};
       const { error } = await context.supabase
         .from("leave_requests")
         .update({ ...fields, ...reviewed })
-        .eq("id", id);
-      if (error) throw new Error(error.message);
+        .eq("id", id)
+        .select("id")
+        .single();
+      if (error) {
+        console.error("[leave] saveLeave update", error);
+        throw new Error("Unable to update leave request. Please try again.");
+      }
       return { id };
+    }
+    if (!data.branch_id || !data.student_id || !data.from_date || !data.to_date) {
+      throw new Error("Student, branch and leave dates are required.");
     }
     const { data: row, error } = await context.supabase
       .from("leave_requests")
-      .insert({ ...fields, reason: fields.reason ?? "", created_by: context.userId })
+      .insert({
+        branch_id: data.branch_id,
+        student_id: data.student_id,
+        from_date: data.from_date,
+        to_date: data.to_date,
+        reason: fields.reason ?? "",
+        destination: fields.destination ?? null,
+        contact_phone: fields.contact_phone ?? null,
+        status: "pending",
+        created_by: context.userId,
+      })
       .select("id")
       .single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[leave] saveLeave insert", error);
+      throw new Error("Unable to save leave request. Please try again.");
+    }
     return { id: row.id };
   });
 

@@ -85,7 +85,7 @@ export function PhotoField({
       toast.error("Photo must be smaller than 5 MB");
       return;
     }
-    if (!file.type.startsWith("image/")) {
+    if (!(file.type === "image/jpeg" || file.type === "image/png" || file.type === "image/gif" || file.type === "image/webp")) {
       toast.error("Please choose an image file");
       return;
     }

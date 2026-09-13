@@ -8,6 +8,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { deleteRecord } from "@/lib/ops-extra.functions";
+import { useSession } from "@/hooks/use-session";
 
 export type Column<T> = {
   key: string;
@@ -20,11 +39,50 @@ export function RecordTable<T extends { id: string }>({
   columns,
   rows,
   onRowClick,
+  onDelete,
+  deleteLabel = "this record",
+  deleteTable,
 }: {
   columns: Column<T>[];
   rows: T[];
   onRowClick?: (row: T) => void;
+  onDelete?: (row: T) => Promise<void>;
+  deleteLabel?: string;
+  deleteTable?:
+    | "students"
+    | "admissions"
+    | "hostels"
+    | "buildings"
+    | "floors"
+    | "rooms"
+    | "beds"
+    | "student_gate_passes"
+    | "visitors"
+    | "medical_records"
+    | "medicines"
+    | "vendors"
+    | "mess_menus"
+    | "food_stock"
+    | "assets"
+    | "donations"
+    | "expenses"
+    | "inventory_items"
+    | "issues"
+    | "complaints"
+    | "maintenance_requests"
+    | "staff"
+    | "attendance"
+    | "leave_requests";
 }) {
+  const { roles } = useSession();
+  const qc = useQueryClient();
+  const remove = useServerFn(deleteRecord);
+  const autoDelete = useMutation({
+    mutationFn: (row: T) => remove({ data: { table: deleteTable!, id: row.id } }),
+    onSuccess: () => void qc.invalidateQueries(),
+  });
+  const canAutoDelete = Boolean(deleteTable) && roles.some((role) => ["super_admin", "trust_admin", "branch_admin"].includes(role));
+  const deleteHandler = onDelete ?? (canAutoDelete ? async (row: T) => { await autoDelete.mutateAsync(row); } : undefined);
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <Table>
@@ -35,6 +93,7 @@ export function RecordTable<T extends { id: string }>({
                 {c.header}
               </TableHead>
             ))}
+            {deleteHandler && <TableHead className="w-24 text-right">Actions</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -49,11 +108,61 @@ export function RecordTable<T extends { id: string }>({
                   {c.cell(row)}
                 </TableCell>
               ))}
+              {deleteHandler && <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
+                <DeleteCell row={row} onDelete={deleteHandler} label={deleteLabel} />
+              </TableCell>}
             </TableRow>
           ))}
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+function DeleteCell<T extends { id: string }>({
+  row,
+  onDelete,
+  label,
+}: {
+  row: T;
+  onDelete: (row: T) => Promise<void>;
+  label: string;
+}) {
+  const [pending, setPending] = useState(false);
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button size="sm" variant="destructive" disabled={pending} aria-label={`Delete ${label}`}>
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {label}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will archive the record and remove it from normal lists. Related records are preserved.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={async () => {
+              setPending(true);
+              try {
+                await onDelete(row);
+                toast.success(`${label} deleted successfully`);
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : `Unable to delete ${label}`);
+              } finally {
+                setPending(false);
+              }
+            }}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

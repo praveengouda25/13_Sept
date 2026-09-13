@@ -141,6 +141,8 @@ function StaffPage() {
       {rows.length > 0 && (
         <RecordTable
           rows={rows}
+          deleteTable="staff"
+          deleteLabel="staff record"
           columns={[
             { key: "name", header: "Name", cell: (r) => r.full_name },
             { key: "designation", header: "Designation", cell: (r) => r.designation ?? "—" },
